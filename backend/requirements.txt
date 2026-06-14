@@ -1,0 +1,34 @@
+# --- API / servidor ---
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+python-multipart==0.0.20
+
+# --- Base de datos ---
+SQLAlchemy==2.0.36
+
+# --- Validación / config ---
+pydantic==2.10.4
+pydantic-settings==2.7.1
+
+# --- Datos de mercado (Binance) ---
+ccxt==4.4.50
+
+# --- Cálculo numérico / indicadores ---
+pandas==2.2.3
+numpy==2.2.1
+
+# --- Scheduler del bot ---
+APScheduler==3.11.0
+
+# --- Capa de IA (Ollama / Groq / Gemini con una sola interfaz) ---
+litellm==1.55.9
+
+# --- Seguridad / auth ---
+bcrypt==4.2.1
+python-jose[cryptography]==3.3.0
+
+# --- HTTP (httpx<0.28 por compatibilidad con litellm) ---
+httpx==0.27.2
+
+# --- Tests ---
+pytest==8.3.4
