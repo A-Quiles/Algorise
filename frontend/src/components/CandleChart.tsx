@@ -3,14 +3,14 @@ import { createChart, ColorType, type IChartApi, type CandlestickData } from "li
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../lib/api";
 
-export default function CandleChart({ symbol, timeframe }: { symbol: string; timeframe: string }) {
+export default function CandleChart({ symbol, timeframe, limit = 300 }: { symbol: string; timeframe: string; limit?: number }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
 
   const { data, isLoading, error } = useQuery({
-    queryKey: ["ohlcv", symbol, timeframe],
+    queryKey: ["ohlcv", symbol, timeframe, limit],
     queryFn: async () => {
-      const res = await api.get("/market/ohlcv", { params: { symbol, timeframe, limit: 300 } });
+      const res = await api.get("/market/ohlcv", { params: { symbol, timeframe, limit } });
       return res.data as CandlestickData[];
     },
     refetchInterval: 30000,

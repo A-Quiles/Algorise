@@ -5,7 +5,10 @@ import { Badge, Section, Slider, Toggle } from "../components/ui";
 import type { BotConfig, StrategyInfo } from "../lib/types";
 
 const TIMEFRAMES = ["1m", "5m", "15m", "30m", "1h", "4h", "1d"];
-const COMMON_PAIRS = ["BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT", "XRP/USDT", "ADA/USDT", "DOGE/USDT"];
+// Monedas de cotización (lo que tienes en cartera y la cotización de los pares).
+const QUOTE_CURRENCIES = ["USDT", "USDC", "EUR", "BUSD", "GBP", "TRY"];
+// Criptos habituales; los pares se forman con la moneda base elegida (p.ej. BTC/EUR).
+const COMMON_COINS = ["BTC", "ETH", "SOL", "BNB", "XRP", "ADA", "DOGE", "DOT", "MATIC"];
 const PRESETS = [
   { id: "conservador", label: "🛡️ Conservador" },
   { id: "equilibrado", label: "⚖️ Equilibrado" },
@@ -32,6 +35,12 @@ export default function Config() {
   const togglePair = (p: string) => {
     const pairs = draft.pairs.includes(p) ? draft.pairs.filter((x) => x !== p) : [...draft.pairs, p];
     set({ pairs });
+  };
+
+  // Al cambiar la moneda base, reconvierte los pares existentes (BTC/USDT -> BTC/EUR).
+  const changeBaseCurrency = (quote: string) => {
+    const pairs = draft.pairs.map((p) => `${p.split("/")[0]}/${quote}`);
+    setDraft({ ...draft, base_currency: quote, pairs });
   };
 
   const applyPreset = async (name: string) => {
@@ -82,8 +91,11 @@ export default function Config() {
             <p className="text-xs text-slate-500 mt-1">Aplícalo con "Reiniciar cuenta" en Ajustes.</p>
           </div>
           <div>
-            <label className="label">Moneda base</label>
-            <input className="input" value={draft.base_currency} onChange={(e) => set({ base_currency: e.target.value.toUpperCase() })} />
+            <label className="label">Moneda base (tu cartera)</label>
+            <select className="input" value={draft.base_currency} onChange={(e) => changeBaseCurrency(e.target.value)}>
+              {Array.from(new Set([...QUOTE_CURRENCIES, draft.base_currency])).map((q) => <option key={q} value={q}>{q}</option>)}
+            </select>
+            <p className="text-xs text-slate-500 mt-1">Al cambiarla, los pares se reconvierten (p.ej. BTC/USDT → BTC/EUR).</p>
           </div>
           <div>
             <label className="label">Marco temporal (vela / ciclo)</label>
@@ -93,12 +105,13 @@ export default function Config() {
           </div>
         </div>
         <div className="mt-4">
-          <label className="label">Pares a operar</label>
+          <label className="label">Pares a operar (en {draft.base_currency})</label>
           <div className="flex flex-wrap gap-2">
-            {Array.from(new Set([...COMMON_PAIRS, ...draft.pairs])).map((p) => (
+            {Array.from(new Set([...COMMON_COINS.map((c) => `${c}/${draft.base_currency}`), ...draft.pairs])).map((p) => (
               <button key={p} onClick={() => togglePair(p)} className={`px-3 py-1 rounded-full text-sm border ${draft.pairs.includes(p) ? "bg-accent/20 border-accent text-sky-300" : "border-border text-slate-400"}`}>{p}</button>
             ))}
           </div>
+          <p className="text-xs text-slate-500 mt-2">Nota: no todas las criptos tienen par en {draft.base_currency} en Binance; si un par no existe, el bot lo ignora.</p>
         </div>
       </Section>
 

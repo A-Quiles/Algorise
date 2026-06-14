@@ -14,6 +14,19 @@ const STATUS_LABEL: Record<string, { text: string; color: "green" | "amber" | "s
   stopped: { text: "Detenido", color: "slate" },
 };
 
+// Intervalo de cada vela del gráfico (independiente del timeframe con el que opera el bot).
+const CHART_TIMEFRAMES: { value: string; label: string }[] = [
+  { value: "1m", label: "1 min" },
+  { value: "5m", label: "5 min" },
+  { value: "15m", label: "15 min" },
+  { value: "30m", label: "30 min" },
+  { value: "1h", label: "1 hora" },
+  { value: "4h", label: "4 horas" },
+  { value: "1d", label: "1 día" },
+  { value: "1w", label: "1 semana" },
+  { value: "1M", label: "1 mes" },
+];
+
 export default function Dashboard() {
   const { data: live, connected } = useDashboardSocket();
   const { data: initial, refetch } = useQuery({
@@ -29,6 +42,7 @@ export default function Dashboard() {
   const d = live || initial;
   const [busy, setBusy] = useState<string | null>(null);
   const [pair, setPair] = useState<string>("BTC/USDT");
+  const [chartTf, setChartTf] = useState<string>("1h");
 
   useEffect(() => {
     if (config?.pairs?.length && !config.pairs.includes(pair)) setPair(config.pairs[0]);
@@ -85,12 +99,17 @@ export default function Dashboard() {
         <Section
           title="Gráfico de precio"
           action={
-            <select className="input w-auto" value={pair} onChange={(e) => setPair(e.target.value)}>
-              {(config?.pairs ?? Object.keys(d.prices)).map((p) => <option key={p} value={p}>{p}</option>)}
-            </select>
+            <div className="flex flex-wrap gap-2">
+              <select className="input w-auto" value={pair} onChange={(e) => setPair(e.target.value)} title="Par">
+                {(config?.pairs ?? Object.keys(d.prices)).map((p) => <option key={p} value={p}>{p}</option>)}
+              </select>
+              <select className="input w-auto" value={chartTf} onChange={(e) => setChartTf(e.target.value)} title="Intervalo de vela">
+                {CHART_TIMEFRAMES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+              </select>
+            </div>
           }
         >
-          <CandleChart symbol={pair} timeframe={config?.timeframe ?? "5m"} />
+          <CandleChart symbol={pair} timeframe={chartTf} />
         </Section>
       </div>
 
