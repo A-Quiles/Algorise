@@ -74,6 +74,10 @@ export default function Optimizer() {
     timeframe,
     base_currency: quote,
     pairs: [symbol],
+    risk: {
+      ...(config as BotConfig).risk,
+      ...r.risk_config,
+    },
   });
 
   const flash = (text: string) => { setMsg(text); setTimeout(() => setMsg(""), 2500); };
@@ -206,7 +210,8 @@ export default function Optimizer() {
                 <thead className="text-slate-400 text-xs">
                   <tr className="text-left border-b border-border">
                     <th className="py-2">#</th><th>Estrategia</th><th>{job.objective_label}</th>
-                    <th>Retorno</th><th>vs Hold</th><th>Aciertos</th><th>Ops.</th><th>Máx DD</th><th>Parámetros</th><th></th>
+                    <th>Retorno</th><th>vs Hold</th><th>Aciertos</th><th>Ops.</th><th>Máx DD</th>
+                    <th>Riesgo/op</th><th>SL%</th><th>TP%</th><th>Parámetros</th><th></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -220,8 +225,11 @@ export default function Optimizer() {
                       <td>{r.metrics.win_rate_pct as number}%</td>
                       <td>{r.metrics.num_trades as number}</td>
                       <td className="text-loss">{pct(r.metrics.max_drawdown_pct as number)}</td>
-                      <td className="text-xs text-slate-400 max-w-[220px]">
-                        {Object.entries(r.params).map(([k, v]) => `${k}: ${v}`).join("  ·  ")}
+                      <td className="text-xs">{r.risk_config.risk_per_trade_pct}%</td>
+                      <td className="text-xs">{r.risk_config.stop_loss_pct}%</td>
+                      <td className="text-xs">{r.risk_config.take_profit_pct}%</td>
+                      <td className="text-xs text-slate-400 max-w-[180px]">
+                        {Object.entries(r.params).map(([k, v]) => `${k}:${v}`).join(" ")}
                       </td>
                       <td className="whitespace-nowrap">
                         <button className="btn-ghost text-xs py-1 mr-1" onClick={() => saveResult(r)}>Guardar</button>

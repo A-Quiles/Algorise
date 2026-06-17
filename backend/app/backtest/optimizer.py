@@ -20,6 +20,15 @@ from app.market.provider import get_market_provider
 from app.schemas.config import RiskConfig
 from app.strategies import get_strategy, list_strategies
 
+# Rangos de riesgo a probar automáticamente.
+_RISK_RANGES = {
+    "risk_per_trade_pct": (0.5, 2.5, 0.5),  # (min, max, step)
+    "stop_loss_pct": (1.5, 5.0, 0.5),
+    "take_profit_pct": (3.0, 10.0, 1.0),
+    "atr_multiplier": (1.5, 3.5, 0.5),
+    "max_open_positions": (2, 6, 1),
+}
+
 logger = logging.getLogger("algorise.optimizer")
 
 # Métricas por las que se puede optimizar (todas "más alto = mejor").
@@ -40,7 +49,8 @@ _TOP_N = 10
 class OptResult:
     strategy_id: str
     strategy_name: str
-    params: dict
+    params: dict  # parámetros de la estrategia
+    risk_config: dict  # parámetros de riesgo (serializado)
     metrics: dict
     score: float
 
@@ -74,6 +84,7 @@ class OptJob:
                     "strategy_id": r.strategy_id,
                     "strategy_name": r.strategy_name,
                     "params": r.params,
+                    "risk_config": r.risk_config,
                     "metrics": r.metrics,
                     "score": r.score,
                 }
@@ -122,6 +133,51 @@ def _sample_params(strat, n: int) -> list[dict]:
     return combos
 
 
+def _sample_risks(n: int) -> list[RiskConfig]:
+    """Combinaciones aleatorias de riesgo a probar."""
+    default = RiskConfig()
+    risks: list[RiskConfig] = [default]
+    seen = set()
+
+    for _ in range(n - 1):  # default ya cuenta como 1
+        min_r, max_r, step_r = _RISK_RANGES["risk_per_trade_pct"]
+        steps_r = max(1, int((max_r - min_r) / step_r))
+        risk_pct = min_r + random.randint(0, steps_r) * step_r
+
+        min_sl, max_sl, step_sl = _RISK_RANGES["stop_loss_pct"]
+        steps_sl = max(1, int((max_sl - min_sl) / step_sl))
+        sl = min_sl + random.randint(0, steps_sl) * step_sl
+
+        min_tp, max_tp, step_tp = _RISK_RANGES["take_profit_pct"]
+        steps_tp = max(1, int((max_tp - min_tp) / step_tp))
+        tp = min_tp + random.randint(0, steps_tp) * step_tp
+
+        use_atr = random.choice([True, False])
+        min_atr, max_atr, step_atr = _RISK_RANGES["atr_multiplier"]
+        steps_atr = max(1, int((max_atr - min_atr) / step_atr))
+        atr_mult = min_atr + random.randint(0, steps_atr) * step_atr
+
+        trailing = random.choice([None, 1.0, 2.0, 3.0])
+
+        min_pos, max_pos, step_pos = _RISK_RANGES["max_open_positions"]
+        max_pos_val = min_pos + random.randint(0, int((max_pos - min_pos) / step_pos)) * int(step_pos)
+
+        risk = RiskConfig(
+            risk_per_trade_pct=round(risk_pct, 2),
+            stop_loss_pct=round(sl, 1),
+            take_profit_pct=round(tp, 1),
+            use_atr_stops=use_atr,
+            atr_multiplier=round(atr_mult, 1),
+            trailing_stop_pct=trailing,
+            max_open_positions=int(max_pos_val),
+        )
+        key = (risk_pct, sl, tp, use_atr, atr_mult, trailing, max_pos_val)
+        if key not in seen:
+            seen.add(key)
+            risks.append(risk)
+    return risks[:n]
+
+
 def _score(metrics: dict, objective: str) -> float:
     """Puntuación finita para ordenar (evita inf por compatibilidad con JSON)."""
     val = metrics.get(objective)
@@ -147,18 +203,21 @@ def start_optimization(
     job_id = uuid.uuid4().hex[:12]
     ids = strategy_ids or [s.id for s in list_strategies()]
     samples = max(1, min(_MAX_SAMPLES, samples_per_strategy))
+    samples_risk = max(1, min(20, samples // 2 + 1))  # también muestra riesgos (menos que estrategias)
     if objective not in OBJECTIVES:
         objective = "total_return_pct"
 
-    # Plan de simulaciones: (estrategia, parámetros) para cada combinación.
-    plan: list[tuple[str, dict]] = []
+    # Plan: (estrategia, parámetros estrategia, RiskConfig) para cada combinación.
+    plan: list[tuple[str, dict, RiskConfig]] = []
+    risk_samples = _sample_risks(samples_risk)
     for sid in ids:
         try:
             strat = get_strategy(sid)
         except KeyError:
             continue
         for params in _sample_params(strat, samples):
-            plan.append((sid, params))
+            for risk_cfg in risk_samples:
+                plan.append((sid, params, risk_cfg))
 
     job = OptJob(id=job_id, total=len(plan), objective=objective, symbol=symbol, timeframe=timeframe)
     with _LOCK:
@@ -169,7 +228,7 @@ def start_optimization(
 
     threading.Thread(
         target=_run_job,
-        args=(job, plan, symbol, timeframe, days, starting_capital, risk, fee_pct, slippage_pct),
+        args=(job, plan, symbol, timeframe, days, starting_capital, fee_pct, slippage_pct),
         daemon=True,
     ).start()
     return job_id
@@ -177,12 +236,11 @@ def start_optimization(
 
 def _run_job(
     job: OptJob,
-    plan: list[tuple[str, dict]],
+    plan: list[tuple[str, dict, RiskConfig]],
     symbol: str,
     timeframe: str,
     days: int,
     starting_capital: float,
-    risk: RiskConfig,
     fee_pct: float,
     slippage_pct: float,
 ) -> None:
@@ -196,16 +254,16 @@ def _run_job(
             return
 
         results: list[OptResult] = []
-        for sid, params in plan:
+        for sid, params, risk_cfg in plan:
             try:
                 res = simulate(
-                    df, strategy_id=sid, strategy_params=params, risk=risk, timeframe=timeframe,
+                    df, strategy_id=sid, strategy_params=params, risk=risk_cfg, timeframe=timeframe,
                     starting_capital=starting_capital, fee_pct=fee_pct, slippage_pct=slippage_pct,
                 )
                 m = res.metrics
                 if not m.get("error") and m.get("num_trades", 0) >= 1:
                     results.append(
-                        OptResult(sid, get_strategy(sid).name, params, m, _score(m, job.objective))
+                        OptResult(sid, get_strategy(sid).name, params, risk_cfg.model_dump(), m, _score(m, job.objective))
                     )
             except Exception:  # noqa: BLE001
                 logger.exception("Fallo simulando %s con %s", sid, params)

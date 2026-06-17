@@ -20,7 +20,11 @@
       "Bash(MSYS_NO_PATHCONV=1 podman run --rm -e PYTHONDONTWRITEBYTECODE=1 -v C:/Users/aquilesd/Algorise/backend:/app:ro -w /app localhost/algorise-backend:latest python -c ' *)",
       "Bash(podman rm *)",
       "Bash(curl -sf http://localhost:8000/api/health)",
-      "Bash(break)"
+      "Bash(break)",
+      "Bash(curl -s -X POST http://localhost:8000/api/auth/login -H 'Content-Type: application/json' -d '{\\\\\"username\\\\\":\\\\\"admin\\\\\",\\\\\"password\\\\\":\\\\\"admin\\\\\"}')",
+      "Bash(curl -v -X GET http://localhost:8000/api/config/saved -H \"Authorization: Bearer $\\(curl -s -X POST http://localhost:8000/api/auth/login -H 'Content-Type: application/json' -d '{\\\\\"username\\\\\":\\\\\"admin\\\\\",\\\\\"password\\\\\":\\\\\"admin\\\\\"}')",
+      "Bash(curl -s -X POST http://localhost:8000/api/config/saved -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhZG1pbiIsImV4cCI6MTc4MjMwMDcxN30.q5Xqn9kBltDnmNVDJ2f5yD9yZ_Id93MXL3T_bKrskys' -H 'Content-Type: application/json' -d '{\"name\":\"🏆 ETH 4h Óptimo\",\"source\":\"optimizer\",\"note\":\"SL=2% TP=4% Risk=1%\"}')",
+      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); r=d['risk']; print\\(f\\\\\"✓ Config aplicada | Estrategia: {d['active_strategy']} | Risk: {r['risk_per_trade_pct']}% | SL: {r['stop_loss_pct']}% | TP: {r['take_profit_pct']}%\\\\\"\\)\")"
     ]
   }
 }

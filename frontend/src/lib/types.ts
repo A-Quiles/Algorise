@@ -124,6 +124,7 @@ export interface OptResultItem {
   strategy_id: string;
   strategy_name: string;
   params: Record<string, number>;
+  risk_config: Partial<RiskConfig>;
   metrics: Record<string, number | null | string>;
   score: number;
 }
