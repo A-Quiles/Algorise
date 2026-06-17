@@ -8,6 +8,7 @@ const NAV = [
   { to: "/strategies", label: "Estrategias", icon: "🧠" },
   { to: "/history", label: "Historial", icon: "📜" },
   { to: "/backtest", label: "Backtesting", icon: "⏮️" },
+  { to: "/optimizer", label: "Auto-backtest", icon: "🔬" },
   { to: "/insights", label: "IA", icon: "🤖" },
   { to: "/settings", label: "Ajustes", icon: "🔧" },
 ];

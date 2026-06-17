@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
+from app.backtest import optimizer
 from app.backtest.engine import run_backtest
 from app.db.database import get_db
 from app.schemas.config import RiskConfig, Timeframe
@@ -53,3 +54,55 @@ def backtest(req: BacktestRequest, db: Session = Depends(get_db)) -> dict:
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=f"Error en el backtest: {exc}") from exc
     return result.to_dict()
+
+
+class OptimizeRequest(BaseModel):
+    """Backtesting automático: barre estrategias y parámetros buscando las mejores configs."""
+
+    symbol: str = "BTC/USDT"
+    timeframe: Timeframe = "1h"
+    days: int = Field(120, ge=10, le=1000, description="Días de histórico para optimizar.")
+    starting_capital: float = Field(10_000.0, ge=10.0)
+    strategy_ids: list[str] | None = Field(None, description="Estrategias a probar; nulo = todas.")
+    samples_per_strategy: int = Field(15, ge=1, le=60, description="Combinaciones por estrategia.")
+    objective: str = Field("total_return_pct", description="Métrica a maximizar.")
+    risk: RiskConfig | None = None
+    fee_pct: float | None = None
+    slippage_pct: float | None = None
+
+
+@router.get("/objectives")
+def objectives() -> dict:
+    """Métricas disponibles para optimizar (clave -> etiqueta para la UI)."""
+    return optimizer.OBJECTIVES
+
+
+@router.post("/optimize")
+def optimize(req: OptimizeRequest, db: Session = Depends(get_db)) -> dict:
+    """Lanza una optimización en segundo plano y devuelve su id para consultar el progreso."""
+    config = get_config(db)
+    risk = req.risk or config.risk
+    fee = req.fee_pct if req.fee_pct is not None else config.fee_pct
+    slippage = req.slippage_pct if req.slippage_pct is not None else config.slippage_pct
+    job_id = optimizer.start_optimization(
+        symbol=req.symbol,
+        timeframe=req.timeframe,
+        days=req.days,
+        starting_capital=req.starting_capital,
+        strategy_ids=req.strategy_ids,
+        samples_per_strategy=req.samples_per_strategy,
+        objective=req.objective,
+        risk=risk,
+        fee_pct=fee,
+        slippage_pct=slippage,
+    )
+    return {"job_id": job_id}
+
+
+@router.get("/optimize/{job_id}")
+def optimize_status(job_id: str) -> dict:
+    """Estado y resultados (cuando termina) de una optimización."""
+    job = optimizer.get_job(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Optimización no encontrada (pudo expirar tras reiniciar).")
+    return job.to_dict()

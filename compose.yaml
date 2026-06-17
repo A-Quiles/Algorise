@@ -1,0 +1,32 @@
+# Algorise en Podman (paper trading). Uso:  podman compose up -d --build
+# Todo corre dentro de la VM de Podman (WSL), aislado de Windows.
+# Para borrar TODO sin rastro:  podman compose down -v   (la -v borra el volumen de datos)
+name: algorise
+
+services:
+  backend:
+    build: ./backend
+    image: localhost/algorise-backend:latest
+    container_name: algorise-backend
+    environment:
+      # SQLite en el volumen (persiste entre reinicios, removible con -v).
+      DATABASE_URL: sqlite:////data/algorise.db
+      CORS_ORIGINS: "*"
+    ports:
+      - "8000:8000"
+    volumes:
+      - algorise-data:/data
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    image: localhost/algorise-frontend:latest
+    container_name: algorise-frontend
+    ports:
+      - "5173:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  algorise-data:

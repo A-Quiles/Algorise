@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(podman --version)",
+      "Bash(podman machine *)",
+      "Bash(podman-compose --version)",
+      "Bash(docker --version)",
+      "Bash(podman build *)",
+      "Bash(podman volume *)",
+      "Bash(podman pod *)",
+      "Bash(podman run *)",
+      "Bash(podman ps *)",
+      "Bash(curl -s http://localhost:8000/api/health)",
+      "Bash(curl -s http://localhost:5173)",
+      "Bash(curl -s -X POST http://localhost:8000/api/auth/login -H \"Content-Type: application/x-www-form-urlencoded\" -d \"username=admin&password=admin\")",
+      "Bash(podman logs *)",
+      "Bash(curl -s -X POST http://localhost:8000/api/auth/login -H \"Content-Type: application/json\" -d '{\"username\":\"admin\",\"password\":\"admin\"}')",
+      "Bash(podman exec *)",
+      "Bash(MSYS_NO_PATHCONV=1 podman run --rm -e PYTHONDONTWRITEBYTECODE=1 -v C:/Users/aquilesd/Algorise/backend:/app:ro -w /app localhost/algorise-backend:latest sh -c 'python -c \"from app.strategies import list_strategies; print\\(\\\\\"ESTRATEGIAS:\\\\\", [s.id for s in list_strategies\\(\\)]\\)\" && python -m pytest -q -p no:cacheprovider')",
+      "Bash(MSYS_NO_PATHCONV=1 podman run --rm -e PYTHONDONTWRITEBYTECODE=1 -v C:/Users/aquilesd/Algorise/backend:/app:ro -w /app localhost/algorise-backend:latest python -c ' *)",
+      "Bash(podman rm *)",
+      "Bash(curl -sf http://localhost:8000/api/health)",
+      "Bash(break)"
+    ]
+  }
+}

@@ -59,3 +59,23 @@ def atr(df: pd.DataFrame, period: int = 14) -> pd.Series:
         [(high - low), (high - prev_close).abs(), (low - prev_close).abs()], axis=1
     ).max(axis=1)
     return true_range.ewm(alpha=1 / period, adjust=False, min_periods=period).mean()
+
+
+def stochastic(
+    df: pd.DataFrame, k_period: int = 14, d_period: int = 3, smooth_k: int = 3
+) -> tuple[pd.Series, pd.Series]:
+    """Oscilador estocástico. Devuelve (%K suavizado, %D). Rango 0-100."""
+    low_min = df["low"].rolling(window=k_period, min_periods=k_period).min()
+    high_max = df["high"].rolling(window=k_period, min_periods=k_period).max()
+    raw_k = 100 * (df["close"] - low_min) / (high_max - low_min).replace(0.0, np.nan)
+    k = raw_k.rolling(window=smooth_k, min_periods=smooth_k).mean()
+    d = k.rolling(window=d_period, min_periods=d_period).mean()
+    return k.fillna(50.0), d.fillna(50.0)
+
+
+def donchian(df: pd.DataFrame, period: int = 20) -> tuple[pd.Series, pd.Series, pd.Series]:
+    """Canal de Donchian. Devuelve (máximo, medio, mínimo) de las últimas `period` velas."""
+    upper = df["high"].rolling(window=period, min_periods=period).max()
+    lower = df["low"].rolling(window=period, min_periods=period).min()
+    middle = (upper + lower) / 2
+    return upper, middle, lower

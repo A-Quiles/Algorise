@@ -1,0 +1,12 @@
+# No copiar a la imagen: entorno virtual, cachés, BBDD local ni secretos.
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+*.db
+*.sqlite3
+.env
+.env.local
+tests/

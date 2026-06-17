@@ -118,3 +118,34 @@ export interface BacktestResult {
     quantity: number; pnl: number; pnl_pct: number; reason: string;
   }[];
 }
+
+export interface OptResultItem {
+  rank: number;
+  strategy_id: string;
+  strategy_name: string;
+  params: Record<string, number>;
+  metrics: Record<string, number | null | string>;
+  score: number;
+}
+
+export interface OptJob {
+  id: string;
+  status: "running" | "done" | "error";
+  total: number;
+  done: number;
+  objective: string;
+  objective_label: string;
+  symbol: string;
+  timeframe: string;
+  error: string | null;
+  results: OptResultItem[];
+}
+
+export interface SavedConfig {
+  id: number;
+  name: string;
+  note: string | null;
+  source: string | null;
+  created_at: string | null;
+  config: BotConfig;
+}

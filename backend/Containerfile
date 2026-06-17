@@ -1,0 +1,25 @@
+# Backend de Algorise (FastAPI + bot + SQLite) para Podman.
+# Imagen ligera; los datos viven en un volumen montado en /data (no en la imagen).
+FROM python:3.11-slim
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+WORKDIR /app
+
+# Dependencias primero (mejor cacheo de capas).
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Código de la app.
+COPY app ./app
+
+# La BBDD SQLite vive en /data (volumen). Ruta absoluta = 4 barras en la URL.
+RUN mkdir -p /data
+ENV DATABASE_URL=sqlite:////data/algorise.db
+VOLUME ["/data"]
+
+EXPOSE 8000
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

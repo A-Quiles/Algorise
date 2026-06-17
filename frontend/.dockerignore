@@ -1,0 +1,8 @@
+# No copiar al contexto de build: dependencias, artefactos y secretos.
+node_modules/
+dist/
+dist-ssr/
+.vite/
+*.local
+.env
+.env.local

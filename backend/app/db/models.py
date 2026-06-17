@@ -35,6 +35,19 @@ class Settings(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
 
 
+class SavedConfig(Base):
+    """Configuración guardada por el usuario (biblioteca personal de configs reutilizables)."""
+
+    __tablename__ = "saved_configs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(120), index=True)
+    config_json: Mapped[dict] = mapped_column(JSON, default=dict)  # un BotConfig completo
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source: Mapped[str | None] = mapped_column(String(32), nullable=True)  # manual | optimizer
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
 class BotState(Base):
     """Estado en tiempo de ejecución del bot (fila única id=1). Separado de la config."""
 

@@ -2,13 +2,10 @@ import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../lib/api";
 import { Badge, Section, Slider, Toggle } from "../components/ui";
-import type { BotConfig, StrategyInfo } from "../lib/types";
+import { COMMON_COINS, QUOTE_CURRENCIES } from "../lib/markets";
+import type { BotConfig, SavedConfig, StrategyInfo } from "../lib/types";
 
 const TIMEFRAMES = ["1m", "5m", "15m", "30m", "1h", "4h", "1d"];
-// Monedas de cotización (lo que tienes en cartera y la cotización de los pares).
-const QUOTE_CURRENCIES = ["USDT", "USDC", "EUR", "BUSD", "GBP", "TRY"];
-// Criptos habituales; los pares se forman con la moneda base elegida (p.ej. BTC/EUR).
-const COMMON_COINS = ["BTC", "ETH", "SOL", "BNB", "XRP", "ADA", "DOGE", "DOT", "MATIC"];
 const PRESETS = [
   { id: "conservador", label: "🛡️ Conservador" },
   { id: "equilibrado", label: "⚖️ Equilibrado" },
@@ -18,6 +15,7 @@ const PRESETS = [
 export default function Config() {
   const { data, refetch } = useQuery({ queryKey: ["config"], queryFn: async () => (await api.get("/config")).data as BotConfig });
   const { data: strategies } = useQuery({ queryKey: ["strategies"], queryFn: async () => (await api.get("/strategies")).data as StrategyInfo[] });
+  const { data: savedConfigs, refetch: refetchSaved } = useQuery({ queryKey: ["savedConfigs"], queryFn: async () => (await api.get("/config/saved")).data as SavedConfig[] });
 
   const [draft, setDraft] = useState<BotConfig | null>(null);
   const [saved, setSaved] = useState(false);
@@ -62,6 +60,43 @@ export default function Config() {
   };
 
   const flashSaved = () => { setSaved(true); setTimeout(() => setSaved(false), 2000); };
+
+  // --- Configuraciones guardadas (biblioteca personal) ---
+  const saveCurrent = async () => {
+    const name = window.prompt("Nombre para guardar la configuración actual:", `Mi config ${new Date().toLocaleDateString("es-ES")}`);
+    if (!name) return;
+    setError("");
+    try {
+      await api.post("/config/saved", { name, config: draft, source: "manual" });
+      await refetchSaved();
+      flashSaved();
+    } catch (e: any) {
+      setError(e?.response?.data?.detail || "No se pudo guardar la configuración.");
+    }
+  };
+
+  const applySaved = async (id: number) => {
+    if (!window.confirm("¿Aplicar esta configuración guardada? Sustituirá la actual.")) return;
+    setError("");
+    try {
+      await api.post(`/config/saved/${id}/apply`);
+      const fresh = await refetch();
+      if (fresh.data) setDraft(structuredClone(fresh.data));
+      flashSaved();
+    } catch (e: any) {
+      setError(e?.response?.data?.detail || "No se pudo aplicar la configuración.");
+    }
+  };
+
+  const deleteSaved = async (id: number) => {
+    if (!window.confirm("¿Eliminar esta configuración guardada?")) return;
+    try {
+      await api.delete(`/config/saved/${id}`);
+      await refetchSaved();
+    } catch {
+      setError("No se pudo eliminar la configuración.");
+    }
+  };
 
   return (
     <div className="space-y-4 max-w-4xl">
@@ -192,6 +227,32 @@ export default function Config() {
           <Slider label="Comisión por operación" suffix="%" min={0} max={1} step={0.01} value={draft.fee_pct} onChange={(v) => set({ fee_pct: v })} />
           <Slider label="Slippage" suffix="%" min={0} max={1} step={0.01} value={draft.slippage_pct} onChange={(v) => set({ slippage_pct: v })} />
         </div>
+      </Section>
+
+      <Section title="Configuraciones guardadas" action={<button className="btn-ghost text-sm py-1" onClick={saveCurrent}>+ Guardar actual</button>}>
+        {!savedConfigs?.length ? (
+          <p className="text-sm text-slate-400">Aún no has guardado ninguna. Usa «Guardar actual», o guarda las mejores desde <b>Auto-backtest</b>.</p>
+        ) : (
+          <div className="space-y-2">
+            {savedConfigs.map((sc) => (
+              <div key={sc.id} className="flex items-center justify-between gap-3 p-2 rounded-lg border border-border">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium text-slate-200 truncate">{sc.name}</span>
+                    {sc.source === "optimizer" && <Badge color="sky">auto</Badge>}
+                  </div>
+                  <div className="text-xs text-slate-500 truncate">
+                    {sc.config.active_strategy} · {sc.config.pairs?.join(", ")} · {sc.config.timeframe}{sc.note ? ` — ${sc.note}` : ""}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button className="btn-ghost text-xs py-1" onClick={() => applySaved(sc.id)}>Aplicar</button>
+                  <button className="text-xs text-slate-500 hover:text-loss" onClick={() => deleteSaved(sc.id)}>Eliminar</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </Section>
 
       <div className="flex justify-end">

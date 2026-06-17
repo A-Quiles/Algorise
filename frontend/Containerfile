@@ -1,0 +1,15 @@
+# Frontend de Algorise (React + Vite + PWA) para Podman.
+# Etapa 1: compila el sitio estático. Etapa 2: lo sirve con nginx (imagen final mínima).
+
+FROM node:20-alpine AS build
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci
+COPY . .
+RUN npm run build
+
+FROM nginx:1.27-alpine AS run
+# Config SPA: cualquier ruta cae en index.html (React Router / PWA).
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY --from=build /app/dist /usr/share/nginx/html
+EXPOSE 80
