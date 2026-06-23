@@ -103,3 +103,50 @@ def check_can_open(db: Session, risk: RiskConfig, equity: float) -> RiskCheck:
             return RiskCheck(False, f"Drawdown máximo superado ({drawdown_pct:.1f}%).")
 
     return RiskCheck(True, "OK")
+
+
+# --- Riesgo a nivel de cartera (no concentrar el riesgo) ---
+
+def current_exposure_pct(db: Session, equity: float, prices: dict[str, float]) -> float:
+    """% del equity actualmente invertido en posiciones abiertas (a precios de mercado)."""
+    if equity <= 0:
+        return 0.0
+    positions = db.scalars(select(Position).where(Position.status == "open")).all()
+    invested = sum(p.quantity * prices.get(p.symbol, p.entry_price) for p in positions)
+    return invested / equity * 100.0
+
+
+def check_portfolio_limits(
+    db: Session,
+    risk: RiskConfig,
+    equity: float,
+    prices: dict[str, float],
+    *,
+    new_position_cost: float = 0.0,
+    correlated_open: list[str] | None = None,
+) -> RiskCheck:
+    """Guardas de cartera: exposición total máxima y nº de posiciones correlacionadas.
+
+    - `new_position_cost`: coste estimado de la posición candidata (para anticipar la exposición).
+    - `correlated_open`: símbolos abiertos muy correlacionados con el candidato.
+    """
+    # Exposición total tras abrir la candidata.
+    if equity > 0:
+        positions = db.scalars(select(Position).where(Position.status == "open")).all()
+        invested = sum(p.quantity * prices.get(p.symbol, p.entry_price) for p in positions)
+        projected_pct = (invested + new_position_cost) / equity * 100.0
+        if projected_pct > risk.max_portfolio_exposure_pct:
+            return RiskCheck(
+                False,
+                f"Exposición de cartera excedida ({projected_pct:.0f}% > {risk.max_portfolio_exposure_pct:.0f}%).",
+            )
+
+    # Clúster por correlación: no acumular demasiados activos que se mueven igual.
+    if correlated_open and len(correlated_open) >= risk.max_correlated_positions:
+        return RiskCheck(
+            False,
+            f"Demasiadas posiciones correlacionadas ({len(correlated_open)} ≥ "
+            f"{risk.max_correlated_positions}): {', '.join(correlated_open)}.",
+        )
+
+    return RiskCheck(True, "OK")

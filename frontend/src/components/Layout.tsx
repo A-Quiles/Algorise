@@ -9,6 +9,7 @@ const NAV = [
   { to: "/history", label: "Historial", icon: "📜" },
   { to: "/backtest", label: "Backtesting", icon: "⏮️" },
   { to: "/optimizer", label: "Auto-backtest", icon: "🔬" },
+  { to: "/analytics", label: "Analítica", icon: "📈" },
   { to: "/insights", label: "IA", icon: "🤖" },
   { to: "/settings", label: "Ajustes", icon: "🔧" },
 ];

@@ -17,8 +17,9 @@ import pandas as pd
 
 from app.indicators import ta
 from app.market.provider import _TIMEFRAME_MS, get_market_provider
-from app.schemas.config import RiskConfig
+from app.schemas.config import ExecutionConfig, RiskConfig
 from app.strategies import get_strategy
+from app.trading.execution import cap_quantity_by_liquidity, effective_slippage_pct
 from app.trading.risk import compute_stops, position_size
 
 
@@ -60,6 +61,7 @@ def run_backtest(
     starting_capital: float = 10_000.0,
     fee_pct: float = 0.1,
     slippage_pct: float = 0.05,
+    execution: ExecutionConfig | None = None,
 ) -> BacktestResult:
     provider = get_market_provider()
     df = provider.fetch_ohlcv_history(symbol, timeframe, since_ms, until_ms)
@@ -72,6 +74,7 @@ def run_backtest(
         starting_capital=starting_capital,
         fee_pct=fee_pct,
         slippage_pct=slippage_pct,
+        execution=execution,
     )
 
 
@@ -85,6 +88,7 @@ def simulate(
     starting_capital: float = 10_000.0,
     fee_pct: float = 0.1,
     slippage_pct: float = 0.05,
+    execution: ExecutionConfig | None = None,
 ) -> BacktestResult:
     """Simula una estrategia sobre un DataFrame OHLCV ya descargado.
 
@@ -93,6 +97,8 @@ def simulate(
     """
     if len(df) < 50:
         return BacktestResult(metrics={"error": "Histórico insuficiente para el backtest."}, equity_curve=[])
+
+    exec_cfg = execution or ExecutionConfig()
 
     strat = get_strategy(strategy_id)
     params = strat.resolve_params(strategy_params)
@@ -140,7 +146,9 @@ def simulate(
                     exit_price, reason = close, "señal de venta"
 
             if exit_price is not None:
-                fill = exit_price * (1 - slip_f)
+                bar_quote_vol = float(bar["volume"]) * close
+                exit_slip = effective_slippage_pct(slippage_pct, qty * exit_price, bar_quote_vol, exec_cfg) / 100.0
+                fill = exit_price * (1 - exit_slip)
                 proceeds = qty * fill
                 exit_fee = proceeds * fee_f
                 cash += proceeds - exit_fee
@@ -156,11 +164,17 @@ def simulate(
         if qty == 0:
             sig = strat.generate_signal(window, params)
             if sig.action == "buy":
-                fill = close * (1 + slip_f)
+                bar_quote_vol = float(bar["volume"]) * close
+                entry_slip = effective_slippage_pct(slippage_pct, 0.0, bar_quote_vol, exec_cfg) / 100.0
+                fill = close * (1 + entry_slip)
                 equity_now = cash
                 atr_value = float(ta.atr(window).iloc[-1]) if risk.use_atr_stops else None
                 stops = compute_stops(fill, risk, atr_value)
                 size = position_size(equity_now, fill, stops.stop_loss, risk, cash)
+                size = cap_quantity_by_liquidity(size, fill, bar_quote_vol, exec_cfg)
+                # Recalcula el slippage de entrada ahora que conocemos el tamaño real.
+                entry_slip = effective_slippage_pct(slippage_pct, size * close, bar_quote_vol, exec_cfg) / 100.0
+                fill = close * (1 + entry_slip)
                 if size > 0:
                     cost = size * fill
                     fee = cost * fee_f

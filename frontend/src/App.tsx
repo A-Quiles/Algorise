@@ -8,6 +8,7 @@ import Strategies from "./pages/Strategies";
 import History from "./pages/History";
 import Backtest from "./pages/Backtest";
 import Optimizer from "./pages/Optimizer";
+import Analytics from "./pages/Analytics";
 import Insights from "./pages/Insights";
 import Settings from "./pages/Settings";
 import type { ReactNode } from "react";
@@ -28,6 +29,7 @@ export default function App() {
       <Route path="/history" element={<RequireAuth><History /></RequireAuth>} />
       <Route path="/backtest" element={<RequireAuth><Backtest /></RequireAuth>} />
       <Route path="/optimizer" element={<RequireAuth><Optimizer /></RequireAuth>} />
+      <Route path="/analytics" element={<RequireAuth><Analytics /></RequireAuth>} />
       <Route path="/insights" element={<RequireAuth><Insights /></RequireAuth>} />
       <Route path="/settings" element={<RequireAuth><Settings /></RequireAuth>} />
       <Route path="*" element={<Navigate to="/" replace />} />

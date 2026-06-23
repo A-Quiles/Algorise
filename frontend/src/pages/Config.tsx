@@ -20,6 +20,9 @@ export default function Config() {
   const [draft, setDraft] = useState<BotConfig | null>(null);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
+  const [saveDialog, setSaveDialog] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [backtest, setBacktest] = useState<any>(null);
 
   useEffect(() => { if (data && !draft) setDraft(structuredClone(data)); }, [data]);
 
@@ -29,6 +32,25 @@ export default function Config() {
   const set = (patch: Partial<BotConfig>) => setDraft({ ...draft, ...patch });
   const setRisk = (patch: Partial<BotConfig["risk"]>) => setDraft({ ...draft, risk: { ...draft.risk, ...patch } });
   const setLLM = (patch: Partial<BotConfig["llm"]>) => setDraft({ ...draft, llm: { ...draft.llm, ...patch } });
+  const setEnsemble = (patch: Partial<BotConfig["ensemble"]>) => setDraft({ ...draft, ensemble: { ...draft.ensemble, ...patch } });
+  const setExecution = (patch: Partial<BotConfig["execution"]>) => setDraft({ ...draft, execution: { ...draft.execution, ...patch } });
+  const setAlerts = (patch: Partial<BotConfig["alerts"]>) => setDraft({ ...draft, alerts: { ...draft.alerts, ...patch } });
+
+  const toggleEnsembleStrategy = (id: string) => {
+    const exists = draft.ensemble.strategies.find((s) => s.id === id);
+    const strategies = exists
+      ? draft.ensemble.strategies.filter((s) => s.id !== id)
+      : [...draft.ensemble.strategies, { id, weight: 1, params: {} }];
+    setEnsemble({ strategies });
+  };
+  const setEnsembleWeight = (id: string, weight: number) => {
+    setEnsemble({ strategies: draft.ensemble.strategies.map((s) => (s.id === id ? { ...s, weight } : s)) });
+  };
+
+  const addChannel = () => setAlerts({ channels: [...draft.alerts.channels, { type: "discord", url: "", extra: {}, enabled: true }] });
+  const updateChannel = (i: number, patch: Partial<BotConfig["alerts"]["channels"][number]>) =>
+    setAlerts({ channels: draft.alerts.channels.map((c, idx) => (idx === i ? { ...c, ...patch } : c)) });
+  const removeChannel = (i: number) => setAlerts({ channels: draft.alerts.channels.filter((_, idx) => idx !== i) });
 
   const togglePair = (p: string) => {
     const pairs = draft.pairs.includes(p) ? draft.pairs.filter((x) => x !== p) : [...draft.pairs, p];
@@ -62,13 +84,13 @@ export default function Config() {
   const flashSaved = () => { setSaved(true); setTimeout(() => setSaved(false), 2000); };
 
   // --- Configuraciones guardadas (biblioteca personal) ---
-  const saveCurrent = async () => {
-    const name = window.prompt("Nombre para guardar la configuración actual:", `Mi config ${new Date().toLocaleDateString("es-ES")}`);
-    if (!name) return;
+  const saveCurrent = async (payload?: any) => {
+    if (!payload) return setSaveDialog(true);
     setError("");
     try {
-      await api.post("/config/saved", { name, config: draft, source: "manual" });
+      await api.post("/config/saved", { name: payload.name, config: draft, source: "manual", ...payload });
       await refetchSaved();
+      setSaveDialog(false);
       flashSaved();
     } catch (e: any) {
       setError(e?.response?.data?.detail || "No se pudo guardar la configuración.");
@@ -78,13 +100,27 @@ export default function Config() {
   const applySaved = async (id: number) => {
     if (!window.confirm("¿Aplicar esta configuración guardada? Sustituirá la actual.")) return;
     setError("");
+    setBacktest(null);
     try {
-      await api.post(`/config/saved/${id}/apply`);
+      const res = await api.post(`/config/saved/${id}/apply`);
       const fresh = await refetch();
       if (fresh.data) setDraft(structuredClone(fresh.data));
+      if (res.data?.backtest_result) {
+        setBacktest(res.data.backtest_result);
+      }
       flashSaved();
     } catch (e: any) {
       setError(e?.response?.data?.detail || "No se pudo aplicar la configuración.");
+    }
+  };
+
+  const updateSaved = async (id: number, updates: any) => {
+    try {
+      await api.put(`/config/saved/${id}`, updates);
+      await refetchSaved();
+      flashSaved();
+    } catch (e: any) {
+      setError(e?.response?.data?.detail || "No se pudo actualizar la configuración.");
     }
   };
 
@@ -177,6 +213,39 @@ export default function Config() {
         )}
       </Section>
 
+      <Section title="Ensemble (multi-estrategia)" action={<Toggle checked={draft.ensemble.enabled} onChange={(v) => setEnsemble({ enabled: v })} label="Activar" />}>
+        <p className="text-sm text-slate-400 mb-3">
+          Combina varias estrategias por votación ponderada: una entrada solo se confirma si el voto conjunto supera el umbral.
+          Cuando está activo, sustituye a la estrategia única de arriba.
+        </p>
+        {draft.ensemble.enabled && (
+          <>
+            <div className="space-y-2">
+              {strategies?.map((s) => {
+                const sel = draft.ensemble.strategies.find((x) => x.id === s.id);
+                return (
+                  <div key={s.id} className="flex items-center gap-3 p-2 rounded-lg border border-border">
+                    <input type="checkbox" checked={!!sel} onChange={() => toggleEnsembleStrategy(s.id)} />
+                    <span className="flex-1 text-sm">{s.name}</span>
+                    {sel && (
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-slate-400">peso</span>
+                        <input type="number" className="input w-20 py-1" min={0} max={10} step={0.5} value={sel.weight}
+                          onChange={(e) => setEnsembleWeight(s.id, parseFloat(e.target.value))} />
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            <div className="grid sm:grid-cols-2 gap-4 mt-4">
+              <Slider label="Umbral de compra (voto mín.)" min={0} max={1} step={0.05} value={draft.ensemble.buy_threshold} onChange={(v) => setEnsemble({ buy_threshold: v })} />
+              <Slider label="Umbral de venta (voto mín.)" min={0} max={1} step={0.05} value={draft.ensemble.sell_threshold} onChange={(v) => setEnsemble({ sell_threshold: v })} />
+            </div>
+          </>
+        )}
+      </Section>
+
       <Section title="Gestión de riesgo">
         <div className="grid sm:grid-cols-2 gap-x-8 gap-y-5">
           <Slider label="Riesgo por operación" suffix="%" min={0.1} max={10} step={0.1} value={draft.risk.risk_per_trade_pct} onChange={(v) => setRisk({ risk_per_trade_pct: v })} />
@@ -196,6 +265,16 @@ export default function Config() {
             )}
           </div>
         </div>
+      </Section>
+
+      <Section title="Riesgo de cartera (no concentrar el riesgo)">
+        <p className="text-sm text-slate-400 mb-3">Límites a nivel de toda la cartera, por encima del riesgo de cada operación.</p>
+        <div className="grid sm:grid-cols-2 gap-x-8 gap-y-5">
+          <Slider label="Exposición máx. de cartera" suffix="%" min={5} max={100} step={5} value={draft.risk.max_portfolio_exposure_pct} onChange={(v) => setRisk({ max_portfolio_exposure_pct: v })} />
+          <Slider label="Máx. posiciones correlacionadas" min={1} max={10} step={1} value={draft.risk.max_correlated_positions} onChange={(v) => setRisk({ max_correlated_positions: v })} />
+          <Slider label="Umbral de correlación" min={0.1} max={1} step={0.05} value={draft.risk.correlation_threshold} onChange={(v) => setRisk({ correlation_threshold: v })} />
+        </div>
+        <p className="text-xs text-slate-500 mt-2">El bot no abrirá una posición si supera la exposición máxima o si ya hay demasiados activos que se mueven igual (correlación ≥ umbral).</p>
       </Section>
 
       <Section title="Inteligencia artificial (IA gratuita)">
@@ -229,26 +308,101 @@ export default function Config() {
         </div>
       </Section>
 
-      <Section title="Configuraciones guardadas" action={<button className="btn-ghost text-sm py-1" onClick={saveCurrent}>+ Guardar actual</button>}>
+      <Section title="Ejecución realista" action={<Toggle checked={draft.execution.liquidity_aware_slippage} onChange={(v) => setExecution({ liquidity_aware_slippage: v })} label="Activar" />}>
+        <p className="text-sm text-slate-400 mb-3">
+          Hace el backtesting (y el paper) más realista: el slippage crece con el tamaño de la orden frente al volumen de la vela,
+          y limita la posición para no superar un % del volumen. Evita resultados demasiado optimistas.
+        </p>
+        {draft.execution.liquidity_aware_slippage && (
+          <div className="grid sm:grid-cols-2 gap-x-8 gap-y-5">
+            <Slider label="Factor de impacto de mercado" min={0} max={5} step={0.1} value={draft.execution.market_impact_factor} onChange={(v) => setExecution({ market_impact_factor: v })} />
+            <Slider label="Participación máx. en el volumen" suffix="%" min={0.5} max={50} step={0.5} value={draft.execution.max_volume_participation_pct} onChange={(v) => setExecution({ max_volume_participation_pct: v })} />
+          </div>
+        )}
+      </Section>
+
+      <Section title="Avisos (notificaciones)" action={<Toggle checked={draft.alerts.enabled} onChange={(v) => setAlerts({ enabled: v })} label="Activar" />}>
+        <p className="text-sm text-slate-400 mb-3">Recibe avisos de operaciones y eventos de riesgo en Discord, Telegram, Slack o un webhook propio.</p>
+        {draft.alerts.enabled && (
+          <>
+            <div className="flex flex-wrap gap-4 mb-4">
+              <Toggle checked={draft.alerts.on_trade_open} onChange={(v) => setAlerts({ on_trade_open: v })} label="Al abrir" />
+              <Toggle checked={draft.alerts.on_trade_close} onChange={(v) => setAlerts({ on_trade_close: v })} label="Al cerrar" />
+              <Toggle checked={draft.alerts.on_risk_event} onChange={(v) => setAlerts({ on_risk_event: v })} label="Riesgo/breaker" />
+              <Toggle checked={draft.alerts.on_error} onChange={(v) => setAlerts({ on_error: v })} label="Errores" />
+            </div>
+            <div className="space-y-2">
+              {draft.alerts.channels.map((c, i) => (
+                <div key={i} className="flex flex-wrap items-center gap-2 p-2 rounded-lg border border-border">
+                  <select className="input w-auto py-1" value={c.type} onChange={(e) => updateChannel(i, { type: e.target.value as any })}>
+                    <option value="discord">Discord</option>
+                    <option value="telegram">Telegram</option>
+                    <option value="slack">Slack</option>
+                    <option value="generic">Webhook genérico</option>
+                  </select>
+                  <input className="input flex-1 py-1 min-w-[200px]" value={c.url} onChange={(e) => updateChannel(i, { url: e.target.value })}
+                    placeholder={c.type === "telegram" ? "https://api.telegram.org/bot<token>" : "URL del webhook"} />
+                  {c.type === "telegram" && (
+                    <input className="input w-32 py-1" value={(c.extra?.chat_id as string) || ""} onChange={(e) => updateChannel(i, { extra: { ...c.extra, chat_id: e.target.value } })} placeholder="chat_id" />
+                  )}
+                  <Toggle checked={c.enabled} onChange={(v) => updateChannel(i, { enabled: v })} />
+                  <button className="text-xs text-slate-500 hover:text-loss" onClick={() => removeChannel(i)}>✕</button>
+                </div>
+              ))}
+            </div>
+            <button className="btn-ghost text-sm mt-3" onClick={addChannel}>+ Añadir canal</button>
+          </>
+        )}
+      </Section>
+
+      <Section title="Configuraciones guardadas" action={<button className="btn-ghost text-sm py-1" onClick={() => setSaveDialog(true)}>+ Guardar actual</button>}>
         {!savedConfigs?.length ? (
           <p className="text-sm text-slate-400">Aún no has guardado ninguna. Usa «Guardar actual», o guarda las mejores desde <b>Auto-backtest</b>.</p>
         ) : (
           <div className="space-y-2">
             {savedConfigs.map((sc) => (
-              <div key={sc.id} className="flex items-center justify-between gap-3 p-2 rounded-lg border border-border">
-                <div className="min-w-0">
+              <div key={sc.id} className="space-y-1 p-3 rounded-lg border border-border">
+                <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
-                    <span className="font-medium text-slate-200 truncate">{sc.name}</span>
+                    <span className="font-medium text-slate-200">{sc.name}</span>
                     {sc.source === "optimizer" && <Badge color="sky">auto</Badge>}
+                    {sc.auto_backtest_enabled && <Badge color="amber">📊 autobacktest</Badge>}
                   </div>
-                  <div className="text-xs text-slate-500 truncate">
-                    {sc.config.active_strategy} · {sc.config.pairs?.join(", ")} · {sc.config.timeframe}{sc.note ? ` — ${sc.note}` : ""}
+                  <div className="flex items-center gap-2">
+                    <button className="btn-ghost text-xs py-1" onClick={() => applySaved(sc.id)}>Aplicar</button>
+                    <button className="text-xs text-slate-500 hover:text-loss" onClick={() => deleteSaved(sc.id)}>✕</button>
                   </div>
                 </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  <button className="btn-ghost text-xs py-1" onClick={() => applySaved(sc.id)}>Aplicar</button>
-                  <button className="text-xs text-slate-500 hover:text-loss" onClick={() => deleteSaved(sc.id)}>Eliminar</button>
+                <div className="text-xs text-slate-500">
+                  {sc.config.active_strategy} · {sc.config.pairs?.join(", ")} · {sc.config.timeframe}
+                  {sc.note && <div className="mt-1">Nota: {sc.note}</div>}
                 </div>
+                {sc.auto_backtest_enabled && (
+                  <div className="text-xs text-slate-400 bg-slate-900/30 p-2 rounded mt-1">
+                    Backtesting: {sc.auto_backtest_symbol} ({sc.auto_backtest_days} días)
+                  </div>
+                )}
+                <details className="text-xs text-slate-500 cursor-pointer">
+                  <summary>⚙️ Editar autobacktest</summary>
+                  <div className="mt-2 space-y-2 bg-slate-900/30 p-2 rounded">
+                    <div className="flex items-center gap-2">
+                      <input type="checkbox" checked={sc.auto_backtest_enabled} onChange={(e) => updateSaved(sc.id, { auto_backtest_enabled: e.target.checked })} />
+                      <label>Ejecutar backtesting al aplicar</label>
+                    </div>
+                    {sc.auto_backtest_enabled && (
+                      <>
+                        <div>
+                          <label className="text-xs text-slate-400">Símbolo:</label>
+                          <input type="text" className="input text-xs mt-1" value={sc.auto_backtest_symbol} onChange={(e) => updateSaved(sc.id, { auto_backtest_symbol: e.target.value })} placeholder="BTC/USDT" />
+                        </div>
+                        <div>
+                          <label className="text-xs text-slate-400">Días históricos:</label>
+                          <input type="number" className="input text-xs mt-1" min="1" max="1000" value={sc.auto_backtest_days} onChange={(e) => updateSaved(sc.id, { auto_backtest_days: parseInt(e.target.value) })} />
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </details>
               </div>
             ))}
           </div>
@@ -257,6 +411,89 @@ export default function Config() {
 
       <div className="flex justify-end">
         <button className="btn-primary" onClick={save}>Guardar cambios</button>
+      </div>
+
+      {backtest && (
+        <Section title="📊 Resultado del backtesting automático">
+          <div className="space-y-2 text-sm">
+            {backtest.error ? (
+              <p className="text-loss">{backtest.error}</p>
+            ) : (
+              <>
+                <div className="grid sm:grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-slate-400">Retorno total</p>
+                    <p className={`text-lg font-bold ${backtest.total_return_pct >= 0 ? "text-gain" : "text-loss"}`}>{backtest.total_return_pct?.toFixed(2)}%</p>
+                  </div>
+                  <div>
+                    <p className="text-slate-400">Win rate</p>
+                    <p className="text-lg font-bold text-sky-300">{(backtest.win_rate * 100).toFixed(1)}%</p>
+                  </div>
+                  <div>
+                    <p className="text-slate-400">Operaciones</p>
+                    <p className="text-lg font-bold">{backtest.num_trades}</p>
+                  </div>
+                  <div>
+                    <p className="text-slate-400">Max drawdown</p>
+                    <p className={`text-lg font-bold ${backtest.max_drawdown_pct <= -5 ? "text-loss" : "text-slate-300"}`}>{backtest.max_drawdown_pct?.toFixed(2)}%</p>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+          <button className="btn-ghost text-xs mt-2" onClick={() => setBacktest(null)}>Cerrar</button>
+        </Section>
+      )}
+
+      <SaveConfigDialog open={saveDialog} onClose={() => setSaveDialog(false)} onSave={saveCurrent} />
+    </div>
+  );
+}
+
+// Dialog para guardar nueva configuración
+function SaveConfigDialog({ open, onClose, onSave }: any) {
+  const [name, setName] = useState("");
+  const [note, setNote] = useState("");
+  const [autoBacktest, setAutoBacktest] = useState(false);
+  const [symbol, setSymbol] = useState("BTC/USDT");
+  const [days, setDays] = useState(90);
+
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+      <div className="bg-slate-950 border border-border rounded-lg p-6 max-w-md w-full space-y-4">
+        <h2 className="text-lg font-bold">Guardar configuración</h2>
+        <div>
+          <label className="label">Nombre</label>
+          <input type="text" className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder={`Mi config ${new Date().toLocaleDateString("es-ES")}`} autoFocus />
+        </div>
+        <div>
+          <label className="label">Nota (opcional)</label>
+          <input type="text" className="input" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Descripción o contexto..." />
+        </div>
+        <div className="border-t border-border pt-4">
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input type="checkbox" checked={autoBacktest} onChange={(e) => setAutoBacktest(e.target.checked)} />
+            <span className="text-sm">📊 Ejecutar backtesting automático al aplicar</span>
+          </label>
+          {autoBacktest && (
+            <div className="mt-3 space-y-2 ml-6">
+              <div>
+                <label className="label text-xs">Símbolo a backtestear</label>
+                <input type="text" className="input text-sm" value={symbol} onChange={(e) => setSymbol(e.target.value)} />
+              </div>
+              <div>
+                <label className="label text-xs">Días históricos</label>
+                <input type="number" className="input text-sm" min="1" max="1000" value={days} onChange={(e) => setDays(parseInt(e.target.value))} />
+              </div>
+            </div>
+          )}
+        </div>
+        <div className="flex gap-2 justify-end">
+          <button className="btn-ghost" onClick={() => { onClose(); setName(""); setNote(""); setAutoBacktest(false); }}>Cancelar</button>
+          <button className="btn-primary" onClick={() => onSave({ name: name || "Sin nombre", note: note || null, auto_backtest_enabled: autoBacktest, auto_backtest_symbol: symbol, auto_backtest_days: days })}>Guardar</button>
+        </div>
       </div>
     </div>
   );

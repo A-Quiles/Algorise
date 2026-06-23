@@ -53,23 +53,43 @@ def _resolve_model(cfg: LLMConfig) -> tuple[str, dict]:
 
 _SYSTEM_PROMPT = (
     "Eres un analista de trading de criptomonedas experto y prudente. Recibes una señal "
-    "generada por una estrategia cuantitativa y tu trabajo es decidir si CONFIRMARLA o "
-    "VETARLA según el contexto. Sé conservador ante señales débiles o contradictorias. "
-    "Responde SIEMPRE y SOLO con un objeto JSON válido con esta forma exacta: "
-    '{"decision": "confirm"|"veto", "confidence": 0.0-1.0, "explanation": "texto breve en español"}'
+    "generada por una estrategia cuantitativa, además del régimen de mercado, la "
+    "volatilidad y la exposición actual de la cartera. Tu trabajo es decidir si CONFIRMARLA "
+    "o VETARLA. Sé conservador: veta señales débiles o contradictorias, compras en mercado "
+    "claramente bajista, o entradas muy correlacionadas con lo que ya está en cartera "
+    "(riesgo de clúster). Responde SIEMPRE y SOLO con un objeto JSON válido con esta forma "
+    'exacta: {"decision": "confirm"|"veto", "confidence": 0.0-1.0, "explanation": "texto breve en español"}'
 )
 
 
 def _build_user_prompt(symbol: str, signal: Signal, context: dict) -> str:
-    return (
-        f"Par: {symbol}\n"
-        f"Acción propuesta por la estrategia: {signal.action.upper()}\n"
-        f"Fuerza de la señal (0-1): {signal.strength:.2f}\n"
-        f"Razón cuantitativa: {signal.reason}\n"
-        f"Indicadores: {json.dumps(signal.indicators, ensure_ascii=False)}\n"
-        f"Contexto de mercado: {json.dumps(context, ensure_ascii=False)}\n\n"
-        "¿Confirmas o vetas esta operación? Devuelve solo el JSON."
-    )
+    regime = context.get("regime")
+    correlations = context.get("correlations")
+    portfolio = context.get("portfolio")
+
+    lines = [
+        f"Par: {symbol}",
+        f"Acción propuesta por la estrategia: {signal.action.upper()}",
+        f"Fuerza de la señal (0-1): {signal.strength:.2f}",
+        f"Razón cuantitativa: {signal.reason}",
+        f"Indicadores: {json.dumps(signal.indicators, ensure_ascii=False)}",
+    ]
+    if regime:
+        lines.append(f"Régimen de mercado: {json.dumps(regime, ensure_ascii=False)}")
+    if correlations:
+        lines.append(
+            "Correlación alta con posiciones abiertas: "
+            f"{json.dumps(correlations, ensure_ascii=False)}"
+        )
+    if portfolio:
+        lines.append(f"Estado de la cartera: {json.dumps(portfolio, ensure_ascii=False)}")
+    # Resto del contexto (p.ej. precio) sin duplicar las claves ya mostradas.
+    extra = {k: v for k, v in context.items() if k not in {"regime", "correlations", "portfolio"}}
+    if extra:
+        lines.append(f"Contexto adicional: {json.dumps(extra, ensure_ascii=False)}")
+
+    lines.append("\n¿Confirmas o vetas esta operación? Devuelve solo el JSON.")
+    return "\n".join(lines)
 
 
 def _parse_verdict(text: str) -> tuple[str, float, str] | None:

@@ -48,6 +48,7 @@ def backtest(req: BacktestRequest, db: Session = Depends(get_db)) -> dict:
             starting_capital=req.starting_capital,
             fee_pct=fee,
             slippage_pct=slippage,
+            execution=config.execution,
         )
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc

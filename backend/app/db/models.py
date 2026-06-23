@@ -45,6 +45,10 @@ class SavedConfig(Base):
     config_json: Mapped[dict] = mapped_column(JSON, default=dict)  # un BotConfig completo
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
     source: Mapped[str | None] = mapped_column(String(32), nullable=True)  # manual | optimizer
+    # Autobacktest: ejecutar backtesting automático cuando se aplica esta config
+    auto_backtest_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    auto_backtest_symbol: Mapped[str] = mapped_column(String(32), default="BTC/USDT")  # símbolo a backtestear
+    auto_backtest_days: Mapped[int] = mapped_column(Integer, default=90)  # días de histórico
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
 
@@ -154,6 +158,22 @@ class LogEntry(Base):
     level: Mapped[str] = mapped_column(String(16), default="info")  # debug | info | warning | error
     message: Mapped[str] = mapped_column(Text)
     context: Mapped[dict] = mapped_column(JSON, default=dict)
+
+
+class OptimizationJob(Base):
+    """Trabajo de optimización (auto-backtest) persistido para que sobreviva a reinicios.
+
+    `snapshot` guarda el dict que consume la UI (estado + resultados top-N), de forma que
+    al reiniciar el proceso las optimizaciones terminadas siguen consultables por su id.
+    """
+
+    __tablename__ = "optimization_jobs"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    status: Mapped[str] = mapped_column(String(16), default="running", index=True)  # running | done | error
+    snapshot: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
 
 
 class OHLCVCache(Base):

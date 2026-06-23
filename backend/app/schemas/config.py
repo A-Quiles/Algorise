@@ -37,6 +37,19 @@ class RiskConfig(BaseModel):
     max_drawdown_pct: float = Field(
         20.0, ge=1.0, le=100.0, description="Drawdown máximo (%) — circuit breaker que detiene el bot.",
     )
+    # --- Riesgo a nivel de cartera (mejora: no concentrar el riesgo) ---
+    max_portfolio_exposure_pct: float = Field(
+        100.0, ge=5.0, le=100.0,
+        description="% máximo del equity invertido en posiciones a la vez (resto en efectivo).",
+    )
+    max_correlated_positions: int = Field(
+        2, ge=1, le=50,
+        description="Máx. de posiciones con correlación alta entre sí (evita riesgo de clúster).",
+    )
+    correlation_threshold: float = Field(
+        0.8, ge=0.1, le=1.0,
+        description="Correlación a partir de la cual dos activos cuentan como 'correlacionados'.",
+    )
 
 
 class LLMConfig(BaseModel):
@@ -51,6 +64,68 @@ class LLMConfig(BaseModel):
     )
     temperature: float = Field(0.3, ge=0.0, le=1.5, description="Creatividad del modelo (bajo = más estable).")
     use_news: bool = Field(False, description="Incluir titulares de noticias en el análisis (futuro).")
+
+
+class StrategyWeight(BaseModel):
+    """Una estrategia dentro del ensemble, con su peso y parámetros propios."""
+
+    id: str = Field(description="Identificador de la estrategia (p.ej. ma_cross).")
+    weight: float = Field(1.0, ge=0.0, le=10.0, description="Peso del voto de esta estrategia.")
+    params: dict = Field(default_factory=dict, description="Parámetros propios (sobrescriben los por defecto).")
+
+
+class EnsembleConfig(BaseModel):
+    """Multi-estrategia: combina varias estrategias por votación ponderada."""
+
+    enabled: bool = Field(False, description="Si está activo, se usa el ensemble en vez de la estrategia única.")
+    strategies: list[StrategyWeight] = Field(
+        default_factory=list, description="Estrategias que votan, con su peso.",
+    )
+    buy_threshold: float = Field(
+        0.5, ge=0.0, le=1.0,
+        description="Puntuación de voto ponderada mínima (0-1) para emitir una compra.",
+    )
+    sell_threshold: float = Field(
+        0.5, ge=0.0, le=1.0,
+        description="Puntuación de voto ponderada mínima (0-1) para emitir una venta.",
+    )
+
+
+class AlertChannel(BaseModel):
+    """Un canal de notificación (webhook entrante de Discord/Telegram/Slack o genérico)."""
+
+    type: Literal["discord", "telegram", "slack", "generic"] = "discord"
+    url: str = Field("", description="URL del webhook (o de la API de bot de Telegram).")
+    extra: dict = Field(default_factory=dict, description="Datos extra, p.ej. chat_id para Telegram.")
+    enabled: bool = True
+
+
+class AlertConfig(BaseModel):
+    """Avisos multi-canal de eventos del bot (operaciones, breaker, errores)."""
+
+    enabled: bool = Field(False, description="Activar el envío de avisos a canales externos.")
+    channels: list[AlertChannel] = Field(default_factory=list)
+    on_trade_open: bool = Field(True, description="Avisar al abrir una operación.")
+    on_trade_close: bool = Field(True, description="Avisar al cerrar una operación.")
+    on_risk_event: bool = Field(True, description="Avisar en breaker/límite diario/kill switch.")
+    on_error: bool = Field(True, description="Avisar en errores del ciclo.")
+
+
+class ExecutionConfig(BaseModel):
+    """Modelo de ejecución para hacer el backtesting/paper más realista."""
+
+    liquidity_aware_slippage: bool = Field(
+        False,
+        description="Slippage adaptativo según el tamaño de la orden frente al volumen de la vela.",
+    )
+    market_impact_factor: float = Field(
+        0.5, ge=0.0, le=10.0,
+        description="Cuánto penaliza el impacto de mercado (mayor = más slippage en órdenes grandes).",
+    )
+    max_volume_participation_pct: float = Field(
+        5.0, ge=0.1, le=100.0,
+        description="% máx. del volumen de la vela que una orden puede representar (limita el tamaño).",
+    )
 
 
 class BotConfig(BaseModel):
@@ -69,8 +144,11 @@ class BotConfig(BaseModel):
         default_factory=dict,
         description="Parámetros específicos de la estrategia activa (sobrescriben los por defecto).",
     )
+    ensemble: EnsembleConfig = Field(default_factory=EnsembleConfig)
     risk: RiskConfig = Field(default_factory=RiskConfig)
     llm: LLMConfig = Field(default_factory=LLMConfig)
+    alerts: AlertConfig = Field(default_factory=AlertConfig)
+    execution: ExecutionConfig = Field(default_factory=ExecutionConfig)
 
     fee_pct: float = Field(0.1, ge=0.0, le=5.0, description="Comisión simulada por operación (%).")
     slippage_pct: float = Field(0.05, ge=0.0, le=5.0, description="Slippage simulado (%).")

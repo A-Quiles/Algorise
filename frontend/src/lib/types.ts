@@ -10,6 +10,9 @@ export interface RiskConfig {
   max_open_positions: number;
   max_daily_loss_pct: number;
   max_drawdown_pct: number;
+  max_portfolio_exposure_pct: number;
+  max_correlated_positions: number;
+  correlation_threshold: number;
 }
 
 export interface LLMConfig {
@@ -21,6 +24,41 @@ export interface LLMConfig {
   use_news: boolean;
 }
 
+export interface StrategyWeight {
+  id: string;
+  weight: number;
+  params: Record<string, number>;
+}
+
+export interface EnsembleConfig {
+  enabled: boolean;
+  strategies: StrategyWeight[];
+  buy_threshold: number;
+  sell_threshold: number;
+}
+
+export interface AlertChannel {
+  type: "discord" | "telegram" | "slack" | "generic";
+  url: string;
+  extra: Record<string, unknown>;
+  enabled: boolean;
+}
+
+export interface AlertConfig {
+  enabled: boolean;
+  channels: AlertChannel[];
+  on_trade_open: boolean;
+  on_trade_close: boolean;
+  on_risk_event: boolean;
+  on_error: boolean;
+}
+
+export interface ExecutionConfig {
+  liquidity_aware_slippage: boolean;
+  market_impact_factor: number;
+  max_volume_participation_pct: number;
+}
+
 export interface BotConfig {
   mode: "paper" | "live";
   base_currency: string;
@@ -29,10 +67,34 @@ export interface BotConfig {
   timeframe: string;
   active_strategy: string;
   strategy_params: Record<string, number>;
+  ensemble: EnsembleConfig;
   risk: RiskConfig;
   llm: LLMConfig;
+  alerts: AlertConfig;
+  execution: ExecutionConfig;
   fee_pct: number;
   slippage_pct: number;
+}
+
+export interface TradeStats {
+  group?: string;
+  trades: number;
+  win_rate: number;
+  total_pnl: number;
+  avg_pnl: number;
+  profit_factor: number | null;
+  expectancy: number;
+}
+
+export interface AnalyticsPayload {
+  overall: TradeStats;
+  by_strategy: TradeStats[];
+  by_symbol: TradeStats[];
+  by_exit_reason: TradeStats[];
+  by_hour: TradeStats[];
+  streaks: { max_wins: number; max_losses: number };
+  best_trade: { symbol: string; strategy: string | null; pnl: number; pnl_pct: number; reason: string | null } | null;
+  worst_trade: { symbol: string; strategy: string | null; pnl: number; pnl_pct: number; reason: string | null } | null;
 }
 
 export interface ParamSpec {
@@ -149,4 +211,7 @@ export interface SavedConfig {
   source: string | null;
   created_at: string | null;
   config: BotConfig;
+  auto_backtest_enabled: boolean;
+  auto_backtest_symbol: string;
+  auto_backtest_days: number;
 }

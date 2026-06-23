@@ -15,7 +15,11 @@ import time
 import uuid
 from dataclasses import dataclass, field
 
+from sqlalchemy import select
+
 from app.backtest.engine import simulate
+from app.db.database import session_scope
+from app.db.models import OptimizationJob
 from app.market.provider import get_market_provider
 from app.schemas.config import RiskConfig
 from app.strategies import get_strategy, list_strategies
@@ -95,6 +99,49 @@ class OptJob:
 
 _JOBS: dict[str, OptJob] = {}
 _LOCK = threading.Lock()
+
+
+# --- Persistencia en BD (para que las optimizaciones sobrevivan a reinicios) ---
+
+
+class _StoredJob:
+    """Trabajo recuperado de la BD: solo expone el snapshot que consume la UI."""
+
+    def __init__(self, snapshot: dict) -> None:
+        self._snapshot = snapshot
+
+    def to_dict(self) -> dict:
+        return self._snapshot
+
+
+def _persist_job(job: OptJob) -> None:
+    """Guarda/actualiza el estado del trabajo en la BD (best-effort)."""
+    try:
+        snapshot = job.to_dict()
+        with session_scope() as db:
+            row = db.get(OptimizationJob, job.id)
+            if row is None:
+                db.add(OptimizationJob(id=job.id, status=job.status, snapshot=snapshot))
+            else:
+                row.status = job.status
+                row.snapshot = snapshot
+    except Exception:  # noqa: BLE001
+        logger.exception("No se pudo persistir la optimización %s", job.id)
+
+
+def mark_orphaned_jobs_failed() -> None:
+    """Al arrancar: marca como fallidas las optimizaciones que quedaron 'running' (su hilo murió)."""
+    try:
+        with session_scope() as db:
+            rows = db.scalars(select(OptimizationJob).where(OptimizationJob.status == "running")).all()
+            for row in rows:
+                row.status = "error"
+                snap = dict(row.snapshot or {})
+                snap["status"] = "error"
+                snap["error"] = "Optimización interrumpida por un reinicio del servidor."
+                row.snapshot = snap
+    except Exception:  # noqa: BLE001
+        logger.exception("No se pudieron limpiar las optimizaciones huérfanas")
 
 
 def _valid_params(params: dict) -> bool:
@@ -225,6 +272,7 @@ def start_optimization(
         # Poda de trabajos antiguos para no acumular memoria.
         while len(_JOBS) > _MAX_JOBS:
             _JOBS.pop(next(iter(_JOBS)))
+    _persist_job(job)  # deja constancia en BD desde el primer momento
 
     threading.Thread(
         target=_run_job,
@@ -269,6 +317,10 @@ def _run_job(
                 logger.exception("Fallo simulando %s con %s", sid, params)
             finally:
                 job.done += 1
+                # Persiste el progreso de vez en cuando (sin saturar la BD).
+                if job.done % 25 == 0:
+                    job.results = sorted(results, key=lambda r: r.score, reverse=True)[:_TOP_N]
+                    _persist_job(job)
 
         results.sort(key=lambda r: r.score, reverse=True)
         job.results = results[:_TOP_N]
@@ -277,7 +329,20 @@ def _run_job(
         logger.exception("Optimización fallida")
         job.status = "error"
         job.error = str(exc)
+    finally:
+        _persist_job(job)  # estado final (done/error) persistido
 
 
-def get_job(job_id: str) -> OptJob | None:
-    return _JOBS.get(job_id)
+def get_job(job_id: str):
+    """Devuelve el trabajo en memoria o, si no está (p.ej. tras un reinicio), el de la BD."""
+    job = _JOBS.get(job_id)
+    if job is not None:
+        return job
+    try:
+        with session_scope() as db:
+            row = db.get(OptimizationJob, job_id)
+            if row is not None and row.snapshot:
+                return _StoredJob(row.snapshot)
+    except Exception:  # noqa: BLE001
+        logger.exception("No se pudo cargar la optimización %s de la BD", job_id)
+    return None

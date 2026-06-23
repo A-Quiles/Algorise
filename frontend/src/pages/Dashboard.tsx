@@ -58,6 +58,40 @@ export default function Dashboard() {
     }
   };
 
+  // --- Control manual de posiciones ---
+  const closePosition = async (id: number, symbol: string) => {
+    if (!window.confirm(`¿Cerrar la posición de ${symbol} a precio de mercado?`)) return;
+    setBusy(`close-${id}`);
+    try {
+      await api.post(`/positions/${id}/close`);
+      await refetch();
+    } catch (e: any) {
+      window.alert(e?.response?.data?.detail || "No se pudo cerrar la posición.");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const editStops = async (id: number, currentSl: number | null, currentTp: number | null) => {
+    const slStr = window.prompt("Nuevo stop-loss (vacío = sin cambios):", currentSl ? String(currentSl) : "");
+    if (slStr === null) return;
+    const tpStr = window.prompt("Nuevo take-profit (vacío = sin cambios):", currentTp ? String(currentTp) : "");
+    if (tpStr === null) return;
+    const body: Record<string, number> = {};
+    if (slStr.trim()) body.stop_loss = parseFloat(slStr);
+    if (tpStr.trim()) body.take_profit = parseFloat(tpStr);
+    if (!Object.keys(body).length) return;
+    setBusy(`stops-${id}`);
+    try {
+      await api.patch(`/positions/${id}/stops`, body);
+      await refetch();
+    } catch (e: any) {
+      window.alert(e?.response?.data?.detail || "No se pudieron ajustar los stops.");
+    } finally {
+      setBusy(null);
+    }
+  };
+
   if (!d) return <div className="text-slate-400">Cargando panel…</div>;
 
   const status = STATUS_LABEL[d.bot.status] ?? STATUS_LABEL.stopped;
@@ -122,7 +156,7 @@ export default function Dashboard() {
             <table className="w-full text-sm">
               <thead className="text-slate-400 text-xs">
                 <tr className="text-left border-b border-border">
-                  <th className="py-2">Par</th><th>Cantidad</th><th>Entrada</th><th>Actual</th><th>SL / TP</th><th>P&L</th><th>Estrategia</th>
+                  <th className="py-2">Par</th><th>Cantidad</th><th>Entrada</th><th>Actual</th><th>SL / TP</th><th>P&L</th><th>Estrategia</th><th>Acciones</th>
                 </tr>
               </thead>
               <tbody>
@@ -135,6 +169,12 @@ export default function Dashboard() {
                     <td className="text-xs">{num(p.stop_loss, 2)} / {num(p.take_profit, 2)}</td>
                     <td className={pnlColor(p.unrealized_pnl)}>{money(p.unrealized_pnl, cur)} ({pct(p.unrealized_pnl_pct)})</td>
                     <td className="text-xs text-slate-400">{p.strategy}</td>
+                    <td className="whitespace-nowrap">
+                      <button className="text-xs text-slate-400 hover:text-accent mr-2" disabled={!!busy}
+                        onClick={() => editStops(p.id, p.stop_loss, p.take_profit)} title="Ajustar SL/TP">✎ Stops</button>
+                      <button className="text-xs text-loss hover:underline" disabled={!!busy}
+                        onClick={() => closePosition(p.id, p.symbol)} title="Cerrar a mercado">✕ Cerrar</button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
